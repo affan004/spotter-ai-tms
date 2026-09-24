@@ -2,7 +2,26 @@ import React from 'react';
 import { Route, Clock, Calendar, ShieldCheck, Fuel, AlertCircle } from 'lucide-react';
 
 export default function TripSummaryCard({ summary }) {
-  if (!summary) return null;
+  if (!summary) {
+
+    return (
+      <div className="solid-panel" style={{
+        borderRadius: '12px',
+        padding: '24px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        minHeight: '260px',
+        color: '#94A3B8'
+      }}>
+        <Clock size={28} color="#06B6D4" className="animate-spin" />
+        <p style={{ fontSize: '13px', fontWeight: '500' }}>Calculating mission telemetry & HOS cycle...</p>
+      </div>
+    );
+  }
+
 
   const cyclePercent = Math.min(100, Math.round((summary.new_cycle_total / 70.0) * 100));
   const isCycleExceeded = summary.cycle_limit_exceeded;

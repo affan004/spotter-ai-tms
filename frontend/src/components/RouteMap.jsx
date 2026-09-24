@@ -1,27 +1,7 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { Bed, Fuel, Warehouse, Coffee, CheckCircle, Navigation } from 'lucide-react';
-
-// Auto-fit bounds helper component
-function MapBoundsUpdater({ coordinates, waypoints }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (coordinates && coordinates.length > 0) {
-      const bounds = L.latLngBounds(coordinates);
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-    } else if (waypoints && waypoints.length > 0) {
-      const coords = waypoints.map(w => w.coordinates).filter(Boolean);
-      if (coords.length > 0) {
-        const bounds = L.latLngBounds(coords);
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-      }
-    }
-  }, [coordinates, waypoints, map]);
-
-  return null;
-}
+import 'leaflet/dist/leaflet.css';
+import { Navigation } from 'lucide-react';
 
 // Custom Marker Icon Generator
 function createCustomMarkerIcon(type, numberLabel) {
@@ -83,90 +63,111 @@ function createCustomMarkerIcon(type, numberLabel) {
 }
 
 export default function RouteMap({ routeData, summary }) {
-  const defaultCenter = [39.8283, -98.5795]; // Center of USA
-  const coordinates = routeData?.coordinates || [];
-  const waypoints = routeData?.waypoints || [];
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const layerGroupRef = useRef(null);
+
+  // Initialize Leaflet Map once
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    if (!mapInstanceRef.current) {
+      const map = L.map(mapContainerRef.current, {
+        center: [39.8283, -98.5795],
+        zoom: 4,
+        zoomControl: true,
+        scrollWheelZoom: true
+      });
+
+      // CartoDB Dark Matter tile layer
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
+
+      const layerGroup = L.layerGroup().addTo(map);
+      layerGroupRef.current = layerGroup;
+      mapInstanceRef.current = map;
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update Route Polyline & Markers when routeData updates
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const layerGroup = layerGroupRef.current;
+    if (!map || !layerGroup) return;
+
+    layerGroup.clearLayers();
+
+    const coordinates = routeData?.coordinates || [];
+    const waypoints = routeData?.waypoints || [];
+
+    if (coordinates.length > 0) {
+      // Glow polyline layer
+      L.polyline(coordinates, {
+        color: '#06B6D4',
+        weight: 8,
+        opacity: 0.35,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(layerGroup);
+
+      // Core crisp polyline layer
+      L.polyline(coordinates, {
+        color: '#22D3EE',
+        weight: 4,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(layerGroup);
+
+      // Fit map view to bounds
+      const bounds = L.latLngBounds(coordinates);
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    }
+
+    // Add Waypoint Markers
+    waypoints.forEach((wp, idx) => {
+      if (!wp.coordinates || wp.coordinates.length < 2) return;
+      const icon = createCustomMarkerIcon(wp.type, idx + 1);
+      const marker = L.marker(wp.coordinates, { icon });
+
+      const popupColor = wp.type === 'fuel_stop' ? '#F59E0B' : (wp.type.includes('rest') || wp.type.includes('sleeper') ? '#10B981' : '#06B6D4');
+      const popupHtml = `
+        <div style="min-width: 180px; padding: 4px; font-family: 'Inter', sans-serif;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; color: ${popupColor};">
+            ${wp.type.replace('_', ' ')}
+          </div>
+          <div style="font-size: 13px; font-weight: 700; color: #F8FAFC; margin-bottom: 6px;">
+            ${wp.name}
+          </div>
+          <div style="font-size: 11px; color: #94A3B8; display: flex; flex-direction: column; gap: 3px;">
+            <div><strong>Mile Marker:</strong> ${wp.mile_marker} mi</div>
+            <div><strong>Duration:</strong> ${wp.duration_hours} hrs</div>
+            <div><strong>Action:</strong> ${wp.action}</div>
+          </div>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml);
+      marker.addTo(layerGroup);
+    });
+  }, [routeData]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '520px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #334155' }}>
-      <MapContainer
-        center={defaultCenter}
-        zoom={5}
-        scrollWheelZoom={true}
+      {/* Map DOM Element Container */}
+      <div
+        ref={mapContainerRef}
         style={{ width: '100%', height: '100%', backgroundColor: '#0b0f19' }}
-      >
-        {/* CartoDB Dark Matter Tile Layer */}
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={19}
-        />
-
-        {/* Dynamic Bounds Auto-Fitter */}
-        <MapBoundsUpdater coordinates={coordinates} waypoints={waypoints} />
-
-        {/* Active Route Path: Neon Cyan Polyline with luminous styling */}
-        {coordinates.length > 0 && (
-          <>
-            {/* Luminous Glow layer */}
-            <Polyline
-              positions={coordinates}
-              pathOptions={{
-                color: '#06B6D4',
-                weight: 8,
-                opacity: 0.35,
-                lineCap: 'round',
-                lineJoin: 'round'
-              }}
-            />
-            {/* Crisp Core Path */}
-            <Polyline
-              positions={coordinates}
-              pathOptions={{
-                color: '#22D3EE',
-                weight: 4,
-                opacity: 1,
-                lineCap: 'round',
-                lineJoin: 'round'
-              }}
-            />
-          </>
-        )}
-
-        {/* Custom Waypoint Markers */}
-        {waypoints.map((wp, idx) => {
-          if (!wp.coordinates || wp.coordinates.length < 2) return null;
-          const icon = createCustomMarkerIcon(wp.type, idx + 1);
-
-          return (
-            <Marker key={`wp-${idx}`} position={wp.coordinates} icon={icon}>
-              <Popup>
-                <div style={{ minWidth: '180px', padding: '4px' }}>
-                  <div style={{
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    marginBottom: '4px',
-                    color: wp.type === 'fuel_stop' ? '#F59E0B' : (wp.type.includes('rest') || wp.type.includes('sleeper') ? '#10B981' : '#06B6D4')
-                  }}>
-                    {wp.type.replace('_', ' ')}
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#F8FAFC', marginBottom: '6px' }}>
-                    {wp.name}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#94A3B8', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                    <div><strong>Mile Marker:</strong> {wp.mile_marker} mi</div>
-                    <div><strong>Duration:</strong> {wp.duration_hours} hrs</div>
-                    <div><strong>Action:</strong> {wp.action}</div>
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-      </MapContainer>
+      />
 
       {/* Floating Glassmorphic Legend Overlay */}
       <div className="glass-panel" style={{
