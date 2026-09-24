@@ -1,0 +1,23 @@
+# Python Virtual Environments & Cache
+backend/venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+
+# Node & Build artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+.vercel/
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Gemini logs
+.agents/
+.system_generated/
