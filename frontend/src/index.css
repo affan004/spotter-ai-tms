@@ -80,6 +80,22 @@ body {
   font-family: 'Inter', sans-serif !important;
 }
 
+.leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.75) !important;
+  color: #64748B !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(4px) !important;
+  border-radius: 4px !important;
+  margin: 4px !important;
+  padding: 2px 6px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #94A3B8 !important;
+  text-decoration: none !important;
+}
+
+
 .leaflet-popup-content-wrapper {
   background: rgba(30, 41, 59, 0.95) !important;
   backdrop-filter: blur(8px) !important;

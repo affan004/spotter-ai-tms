@@ -78,15 +78,16 @@ export default function RouteMap({ routeData, summary }) {
         scrollWheelZoom: true
       });
 
-      // CartoDB Dark Matter authenticated tile layer
+      // CartoDB Dark Matter authenticated tile layer (official /rastertiles/ path with ?key=)
       const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY || 'cb1_3wxe_1_a2dcc0f441c4ba4d83b419c2';
-      const cartoUrl = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoApiKey}`;
+      const cartoUrl = `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${cartoApiKey}`;
 
       L.tileLayer(cartoUrl, {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
         subdomains: 'abcd',
         maxZoom: 19
       }).addTo(map);
+
 
 
       const layerGroup = L.layerGroup().addTo(map);
