@@ -103,7 +103,10 @@ class HosSimulator:
             now = datetime.now()
             self.start_time = datetime(now.year, now.month, now.day, 8, 0, 0)
         else:
-            self.start_time = start_time
+            if hasattr(start_time, "tzinfo") and start_time.tzinfo is not None:
+                self.start_time = start_time.replace(tzinfo=None)
+            else:
+                self.start_time = start_time
 
         # Generated raw timeline events before midnight partitioning
         self.events: List[TimelineEvent] = []

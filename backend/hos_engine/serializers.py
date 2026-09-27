@@ -29,6 +29,14 @@ class TripCalculationRequestSerializer(serializers.Serializer):
         max_value=70.0,
         help_text="Current 70-hour / 8-day cycle hours already consumed (0.0 to 70.0)"
     )
+    current_cycle_used_hours = serializers.FloatField(
+        required=False,
+        default=None,
+        allow_null=True,
+        min_value=0.0,
+        max_value=70.0,
+        help_text="Alias for current_cycle_used"
+    )
     avg_speed = serializers.FloatField(
         required=False,
         default=55.0,
