@@ -122,12 +122,35 @@ export default function EldLogSheet({ dayData, tripSummary, locations }) {
               }}
             >
               <Printer size={14} />
-              <span>Print / Export Log</span>
+              <span>Print Day {dayData.day_number} Sheet</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.print();
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                border: '1px solid rgba(6, 182, 212, 0.4)',
+                borderRadius: '6px',
+                color: '#38BDF8',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              <FileText size={14} />
+              <span>Export All {allDays?.length || 1} Days Logbook (PDF)</span>
             </button>
           </div>
         </div>
 
-        {/* Form Meta Fields Grid */}
+        {/* Form Meta Fields Grid - Official FMCSA §395.8 Header */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(4, 1fr)',
@@ -146,9 +169,9 @@ export default function EldLogSheet({ dayData, tripSummary, locations }) {
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
-              Motor Carrier:
+              Motor Carrier Name:
             </span>
-            <strong style={{ color: '#F8FAFC' }}>Spotter Logistics Network LLC</strong>
+            <strong style={{ color: '#F8FAFC' }}>Spotter Logistics Network LLC (DOT #389201)</strong>
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
@@ -158,23 +181,36 @@ export default function EldLogSheet({ dayData, tripSummary, locations }) {
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
-              Tractor / Trailer:
+              Co-Driver Status:
             </span>
-            <strong className="font-mono" style={{ color: '#38BDF8' }}>TRK-8492 / TRL-5301</strong>
+            <strong style={{ color: '#94A3B8' }}>None / Solo Driver</strong>
           </div>
 
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
-              From (Origin):
+              Tractor / Trailer IDs:
             </span>
-            <strong style={{ color: '#F8FAFC' }}>{locations?.pickup?.name || 'Origin Terminal'}</strong>
+            <strong className="font-mono" style={{ color: '#38BDF8' }}>TRK-8492 / TRL-5301 (53ft Dry Van)</strong>
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
-              To (Destination):
+              Shipping Doc / B/L #:
+            </span>
+            <strong className="font-mono" style={{ color: '#F59E0B' }}>BL-84920-TX (Automotive Freight)</strong>
+          </div>
+          <div>
+            <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
+              From (Origin Terminal):
+            </span>
+            <strong style={{ color: '#F8FAFC' }}>{locations?.current?.name || locations?.pickup?.name || 'Origin Terminal'}</strong>
+          </div>
+          <div>
+            <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
+              To (Destination Terminal):
             </span>
             <strong style={{ color: '#F8FAFC' }}>{locations?.dropoff?.name || 'Destination Terminal'}</strong>
           </div>
+
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
               Total Miles Driving Today:
@@ -183,9 +219,15 @@ export default function EldLogSheet({ dayData, tripSummary, locations }) {
           </div>
           <div>
             <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
-              Home Terminal Address:
+              Main Office Address:
             </span>
-            <strong style={{ color: '#F8FAFC' }}>100 N Senate Ave, Indianapolis, IN</strong>
+            <strong style={{ color: '#94A3B8' }}>500 W Madison St, Suite 2400, Chicago, IL</strong>
+          </div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <span style={{ color: '#64748B', display: 'block', fontSize: '10px', textTransform: 'uppercase', fontWeight: '700' }}>
+              Home Terminal & Operating Center:
+            </span>
+            <strong style={{ color: '#F8FAFC' }}>Schneider National Terminal #4 - 100 N Senate Ave, Indianapolis, IN</strong>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import Header from './components/Header';
 import TripForm from './components/TripForm';
 import TripSummaryCard from './components/TripSummaryCard';
 import RouteMap from './components/RouteMap';
+import RouteInstructions from './components/RouteInstructions';
 import EldLogSheet from './components/EldLogSheet';
 import DayTabs from './components/DayTabs';
 import { calculateTrip } from './services/api';
@@ -14,12 +15,15 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Default initial trip on startup
+  // Default initial trip on startup: Indianapolis, IN to Dallas, TX (Depart at 08:00 AM)
   useEffect(() => {
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
     handleRunCalculation({
       current_location: 'Indianapolis, IN',
       pickup_location: 'Indianapolis, IN',
       dropoff_location: 'Dallas, TX',
+      start_time: `${dateStr}T08:00:00`,
       current_cycle_used: 14.5,
       avg_speed: 55,
       custom_distance_miles: 1025.0,
@@ -89,7 +93,7 @@ export default function App() {
           <TripSummaryCard summary={tripData?.summary} />
         </div>
 
-        {/* Interactive Geospatial Routing Section */}
+        {/* Interactive Geospatial Routing Section with Simulation & Leg Highlighting */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -97,7 +101,7 @@ export default function App() {
                 Commercial Interstate Corridor & Dynamic Waypoints
               </h2>
               <p style={{ fontSize: '12px', color: '#94A3B8' }}>
-                Interactive dark matter map with neon routing path, clearance checks, and mandated HOS stop locations.
+                Interactive dark matter map with neon routing path, truck clearance checks, animated simulation, and mandated HOS stop locations.
               </p>
             </div>
             {tripData?.route?.truck_compliance && (
@@ -117,6 +121,18 @@ export default function App() {
           <RouteMap
             routeData={tripData?.route}
             summary={tripData?.summary}
+            days={tripData?.days || []}
+            activeDayIndex={activeDayIndex}
+            onSelectDay={(idx) => setActiveDayIndex(idx)}
+          />
+        </section>
+
+        {/* Step-by-Step Route Instructions & Commercial Dispatch Manifest */}
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <RouteInstructions
+            routeData={tripData?.route}
+            summary={tripData?.summary}
+            days={tripData?.days || []}
           />
         </section>
 
@@ -146,6 +162,7 @@ export default function App() {
               dayData={activeDay}
               tripSummary={tripData?.summary}
               locations={tripData?.locations}
+              allDays={tripData?.days || []}
             />
           ) : (
             <div className="solid-panel" style={{

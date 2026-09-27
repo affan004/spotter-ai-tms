@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
-import { MapPin, Gauge, Clock, Zap, ArrowRight, Truck, RefreshCw } from 'lucide-react';
+import { MapPin, Gauge, Clock, Zap, ArrowRight, Truck, RefreshCw, Compass } from 'lucide-react';
 
 export default function TripForm({ onSubmit, loading, onSelectPreset }) {
   const [currentLocation, setCurrentLocation] = useState('Indianapolis, IN');
   const [pickupLocation, setPickupLocation] = useState('Indianapolis, IN');
   const [dropoffLocation, setDropoffLocation] = useState('Dallas, TX');
+  const [departureTime, setDepartureTime] = useState('08:00');
   const [currentCycleUsed, setCurrentCycleUsed] = useState(14.5);
   const [avgSpeed, setAvgSpeed] = useState(55);
   const [customDistance, setCustomDistance] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    // Construct start_time with today's date and chosen departure time
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    const startTimeIso = `${dateStr}T${departureTime}:00`;
+
     onSubmit({
       current_location: currentLocation,
       pickup_location: pickupLocation,
       dropoff_location: dropoffLocation,
+      start_time: startTimeIso,
       current_cycle_used: parseFloat(currentCycleUsed) || 0,
       avg_speed: parseFloat(avgSpeed) || 55,
       custom_distance_miles: customDistance ? parseFloat(customDistance) : null,
@@ -29,9 +37,21 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
     setDropoffLocation(preset.dropoff_location);
     setCurrentCycleUsed(preset.current_cycle_used);
     setAvgSpeed(preset.avg_speed || 55);
-    setCustomDistance('');
+    setDepartureTime(preset.departure_time || '08:00');
+    setCustomDistance(preset.custom_distance || '');
+
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    const startTimeIso = `${dateStr}T${preset.departure_time || '08:00'}:00`;
+
     if (onSelectPreset) {
-      onSelectPreset(preset);
+      onSelectPreset({
+        ...preset,
+        start_time: startTimeIso,
+        custom_distance_miles: preset.custom_distance ? parseFloat(preset.custom_distance) : null,
+        truck_height_ft: 13.5,
+        truck_weight_lbs: 80000.0
+      });
     }
   };
 
@@ -63,7 +83,7 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
           </h2>
         </div>
         <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '500' }}>
-          Property-Carrying 70hr/8day
+          Property-Carrying 70hr/8day (49 CFR §395)
         </span>
       </div>
 
@@ -72,7 +92,7 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
         <label style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px', display: 'block' }}>
           1-Click Demonstration Routes:
         </label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
           <button
             type="button"
             onClick={() => applyPreset({
@@ -80,7 +100,8 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
               pickup_location: 'Indianapolis, IN',
               dropoff_location: 'Dallas, TX',
               current_cycle_used: 14.5,
-              avg_speed: 55
+              avg_speed: 55,
+              departure_time: '08:00'
             })}
             style={{
               padding: '6px 8px',
@@ -96,6 +117,32 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
           >
             Indy → Dallas (1,025 mi)
           </button>
+
+          <button
+            type="button"
+            onClick={() => applyPreset({
+              current_location: 'Chicago, IL',
+              pickup_location: 'Indianapolis, IN',
+              dropoff_location: 'Dallas, TX',
+              current_cycle_used: 14.5,
+              avg_speed: 55,
+              departure_time: '08:00'
+            })}
+            style={{
+              padding: '6px 8px',
+              backgroundColor: '#0F172A',
+              border: '1px solid rgba(129, 140, 248, 0.4)',
+              borderRadius: '6px',
+              color: '#A5B4FC',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            ★ Chi → Indy → Dal (Deadhead)
+          </button>
+
           <button
             type="button"
             onClick={() => applyPreset({
@@ -103,7 +150,8 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
               pickup_location: 'Chicago, IL',
               dropoff_location: 'Atlanta, GA',
               current_cycle_used: 28.0,
-              avg_speed: 55
+              avg_speed: 55,
+              departure_time: '08:00'
             })}
             style={{
               padding: '6px 8px',
@@ -117,8 +165,9 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
               textAlign: 'left'
             }}
           >
-            Chicago → Atlanta (715 mi)
+            Chi → Atlanta (715 mi)
           </button>
+
           <button
             type="button"
             onClick={() => applyPreset({
@@ -126,7 +175,8 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
               pickup_location: 'New York, NY',
               dropoff_location: 'Los Angeles, CA',
               current_cycle_used: 0.0,
-              avg_speed: 55
+              avg_speed: 55,
+              departure_time: '08:00'
             })}
             style={{
               padding: '6px 8px',
@@ -222,12 +272,35 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
         </div>
 
         {/* Operational Parameters */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+          {/* Departure Time */}
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
+              Departure Time (Day 1)
+            </label>
+            <input
+              type="time"
+              value={departureTime}
+              onChange={(e) => setDepartureTime(e.target.value)}
+              required
+              style={{
+                width: '100%',
+                backgroundColor: '#0F172A',
+                border: '1px solid #334155',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                color: '#F8FAFC',
+                fontSize: '13px',
+                outline: 'none'
+              }}
+            />
+          </div>
+
           {/* Current Cycle Hours */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
               <label style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8' }}>
-                Current Cycle Used (Hrs)
+                Cycle Used (Hrs)
               </label>
               <span className="font-mono" style={{ fontSize: '11px', color: '#06B6D4', fontWeight: '600' }}>
                 {currentCycleUsed} / 70.0h
@@ -257,7 +330,7 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
           {/* Average Truck Speed */}
           <div>
             <label style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
-              Average Speed (MPH)
+              Speed (MPH)
             </label>
             <input
               type="number"
@@ -282,12 +355,12 @@ export default function TripForm({ onSubmit, loading, onSelectPreset }) {
           {/* Optional Distance Override */}
           <div>
             <label style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
-              Manual Mileage Override (Optional)
+              Distance Override (mi)
             </label>
             <input
               type="number"
               min="1"
-              placeholder="Auto-calculated from road API"
+              placeholder="Auto-calculated"
               value={customDistance}
               onChange={(e) => setCustomDistance(e.target.value)}
               style={{

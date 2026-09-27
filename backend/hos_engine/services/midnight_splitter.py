@@ -92,6 +92,10 @@ class MidnightSplitter:
                     # Fractional mileage allocation for driving segments
                     fraction = slice_duration / total_duration if total_duration > 0 else 1.0
                     slice_miles = round(ev.distance_miles * fraction, 2) if ev.status == DutyStatus.DRIVING else 0.0
+                    elapsed_to_slice = (current_slice_start - ev_start).total_seconds() / 3600.0
+                    fraction_to_start = elapsed_to_slice / total_duration if total_duration > 0 else 0.0
+                    seg_start_mile = round(ev.start_mile + (ev.distance_miles * fraction_to_start), 1) if ev.distance_miles > 0 else ev.start_mile
+                    seg_end_mile = round(seg_start_mile + slice_miles, 1)
 
                     segment_dict = {
                         "status": ev.status,
@@ -102,6 +106,8 @@ class MidnightSplitter:
                         "end_decimal": end_dec,
                         "duration_hours": round(slice_duration, 2),
                         "distance_miles": slice_miles,
+                        "start_mile": seg_start_mile,
+                        "end_mile": seg_end_mile,
                         "activity": ev.activity,
                         "remarks": ev.remarks,
                         "location": ev.location
@@ -131,6 +137,7 @@ class MidnightSplitter:
                     prev = merged_segments[-1]
                     prev["end_time"] = seg["end_time"]
                     prev["end_decimal"] = seg["end_decimal"]
+                    prev["end_mile"] = seg.get("end_mile", prev.get("end_mile", 0.0))
                     prev["duration_hours"] = round(prev["duration_hours"] + seg["duration_hours"], 2)
                     prev["distance_miles"] = round(prev["distance_miles"] + seg["distance_miles"], 2)
                     if seg["remarks"] and seg["remarks"] not in prev["remarks"]:
@@ -168,11 +175,16 @@ class MidnightSplitter:
             running_cycle = round(running_cycle + on_duty_today, 2)
             cycle_remaining = round(max(0.0, 70.0 - running_cycle), 2)
 
+            day_start_m = merged_segments[0].get("start_mile", 0.0) if merged_segments else 0.0
+            day_end_m = merged_segments[-1].get("end_mile", day_start_m) if merged_segments else day_start_m
+
             day_results.append({
                 "day_number": idx,
                 "date": d.isoformat(),
                 "formatted_date": d.strftime("%A, %B %d, %Y"),
                 "daily_miles": daily_miles,
+                "day_start_mile": day_start_m,
+                "day_end_mile": day_end_m,
                 "totals": {
                     "off_duty_hours": off_duty,
                     "sleeper_hours": sleeper,

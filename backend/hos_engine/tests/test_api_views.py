@@ -46,3 +46,25 @@ class HosApiTestCase(TestCase):
         for day in data["days"]:
             self.assertEqual(day["totals"]["total_accounted_hours"], 24.0)
             self.assertTrue(len(day["segments"]) > 0)
+
+        # Validate route instructions output
+        self.assertIn("route_instructions", data["route"])
+        self.assertTrue(len(data["route"]["route_instructions"]) > 0)
+
+    def test_deadhead_and_route_instructions(self):
+        """
+        Test with current location distinct from pickup location.
+        """
+        payload = {
+            "current_location": "Chicago, IL",
+            "pickup_location": "Indianapolis, IN",
+            "dropoff_location": "Dallas, TX",
+            "current_cycle_used": 0.0,
+            "avg_speed": 55.0
+        }
+        response = self.client.post('/api/hos/calculate-trip/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertGreater(data["summary"]["deadhead_distance_miles"], 0)
+        self.assertTrue(len(data["route"]["route_instructions"]) > 0)
+        self.assertTrue(any(wp["type"] == "current" for wp in data["route"]["waypoints"]))

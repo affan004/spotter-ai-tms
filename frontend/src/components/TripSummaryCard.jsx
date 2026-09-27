@@ -67,6 +67,13 @@ export default function TripSummaryCard({ summary }) {
           <div className="font-mono" style={{ fontSize: '20px', fontWeight: '700', color: '#06B6D4' }}>
             {summary.total_distance_miles.toLocaleString()} <span style={{ fontSize: '12px', color: '#94A3B8' }}>mi</span>
           </div>
+          {summary.deadhead_distance_miles > 0 && (
+            <div style={{ fontSize: '10px', color: '#A5B4FC', marginTop: '2px', display: 'flex', gap: '4px' }}>
+              <span>DH: {summary.deadhead_distance_miles}mi</span>
+              <span>•</span>
+              <span style={{ color: '#38BDF8' }}>Load: {summary.loaded_distance_miles}mi</span>
+            </div>
+          )}
         </div>
 
         {/* Driving Time */}

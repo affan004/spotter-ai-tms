@@ -10,7 +10,7 @@ from rest_framework import status
 from .serializers import TripCalculationRequestSerializer
 from .services.hos_simulator import HosSimulator
 from .services.midnight_splitter import MidnightSplitter
-from .services.routing_service import RoutingService
+from .services.routing_service import RoutingService, haversine_distance_miles
 
 
 class CalculateTripView(APIView):
@@ -44,15 +44,25 @@ class CalculateTripView(APIView):
         pickup_geo = RoutingService.geocode(pickup_loc_str)
         dropoff_geo = RoutingService.geocode(dropoff_loc_str)
 
-        # 2. Compute Route
+        # Check if current location differs from pickup location (Deadhead leg)
+        curr_clean = current_loc_str.strip().lower()
+        pick_clean = pickup_loc_str.strip().lower()
+        has_deadhead = curr_clean != pick_clean and haversine_distance_miles(current_geo["lat"], current_geo["lng"], pickup_geo["lat"], pickup_geo["lng"]) > 10.0
+
+        if has_deadhead:
+            routing_points = [current_geo, pickup_geo, dropoff_geo]
+        else:
+            routing_points = [pickup_geo, dropoff_geo]
+
+        # 2. Compute Multi-tier Truck Route with turn-by-turn instructions
         route_data = RoutingService.get_truck_route(
-            origin=pickup_geo,
-            destination=dropoff_geo,
+            waypoints=routing_points,
             truck_height_ft=truck_height,
             truck_weight_lbs=truck_weight
         )
 
         trip_distance_miles = custom_dist if custom_dist else route_data["distance_miles"]
+        deadhead_dist = route_data.get("deadhead_distance_miles", 0.0) if has_deadhead else 0.0
 
         # 3. Execute FMCSA HOS Simulation
         simulator = HosSimulator(
@@ -60,8 +70,10 @@ class CalculateTripView(APIView):
             current_cycle_used=current_cycle_used,
             average_truck_speed=avg_speed,
             start_time=start_time,
+            current_location=current_geo["name"],
             pickup_location=pickup_geo["name"],
             dropoff_location=dropoff_geo["name"],
+            deadhead_distance_miles=deadhead_dist,
             truck_height_ft=truck_height,
             truck_weight_lbs=truck_weight
         )
@@ -80,9 +92,24 @@ class CalculateTripView(APIView):
             total_distance_miles=trip_distance_miles
         )
 
+        # 6. Tag each waypoint with corresponding Day Number
+        for wp in enhanced_waypoints:
+            try:
+                wp_dt = datetime.fromisoformat(wp["timestamp"])
+                wp["day_number"] = 1
+                for d in daily_logs:
+                    d_dt = datetime.fromisoformat(d["date"]).date()
+                    if wp_dt.date() == d_dt:
+                        wp["day_number"] = d["day_number"]
+                        break
+            except Exception:
+                wp["day_number"] = 1
+
         response_payload = {
             "summary": {
                 "total_distance_miles": trip_distance_miles,
+                "deadhead_distance_miles": deadhead_dist,
+                "loaded_distance_miles": round(trip_distance_miles - deadhead_dist, 1),
                 "total_driving_hours": sim_results["total_driving_hours"],
                 "total_on_duty_hours": sim_results["total_on_duty_hours"],
                 "total_elapsed_hours": sim_results["total_elapsed_hours"],
@@ -108,7 +135,10 @@ class CalculateTripView(APIView):
                 "routing_engine": route_data["routing_engine"],
                 "truck_compliance": route_data["truck_compliance"],
                 "coordinates": route_data["coordinates"],
-                "waypoints": enhanced_waypoints
+                "waypoints": enhanced_waypoints,
+                "route_instructions": route_data.get("route_instructions", []),
+                "deadhead_distance_miles": deadhead_dist,
+                "loaded_distance_miles": round(trip_distance_miles - deadhead_dist, 1)
             },
             "days": daily_logs
         }

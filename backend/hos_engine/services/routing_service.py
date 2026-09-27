@@ -110,41 +110,116 @@ class RoutingService:
     @classmethod
     def get_truck_route(
         cls,
-        origin: Dict[str, Any],
-        destination: Dict[str, Any],
+        origin: Optional[Dict[str, Any]] = None,
+        destination: Optional[Dict[str, Any]] = None,
+        waypoints: Optional[List[Dict[str, Any]]] = None,
         truck_height_ft: float = 13.5,
         truck_weight_lbs: float = 80000.0
     ) -> Dict[str, Any]:
         """
-        Computes the route geometry and distance between origin and destination.
-        Attempts OSRM highway routing first; falls back to geodesic interpolation.
+        Computes the route geometry, distance, and turn-by-turn route instructions.
+        Supports multi-stop routes (e.g. Current -> Pickup -> Dropoff).
+        Attempts OSRM highway routing with steps; falls back to geodesic interpolation.
         """
-        lat1, lng1 = origin["lat"], origin["lng"]
-        lat2, lng2 = destination["lat"], destination["lng"]
+        if waypoints is None:
+            if origin and destination:
+                waypoints = [origin, destination]
+            else:
+                raise ValueError("Must provide either waypoints list or origin and destination.")
 
-        # Attempt OSRM Highway Corridor route
+        coords_str = ";".join(f"{pt['lng']},{pt['lat']}" for pt in waypoints)
+        has_deadhead = len(waypoints) >= 3
+
+        # Attempt OSRM Highway Corridor route with turn-by-turn steps
         try:
             osrm_url = (
                 f"https://router.project-osrm.org/route/v1/driving/"
-                f"{lng1},{lat1};{lng2},{lat2}?overview=full&geometries=geojson"
+                f"{coords_str}?overview=full&geometries=geojson&steps=true"
             )
             headers = {"User-Agent": "SpotterAI-TMS-Engine/1.0"}
-            resp = requests.get(osrm_url, headers=headers, timeout=5)
+            resp = requests.get(osrm_url, headers=headers, timeout=6)
             if resp.status_code == 200:
                 data = resp.json()
                 if "routes" in data and len(data["routes"]) > 0:
                     route = data["routes"][0]
-                    # OSRM distance is in meters -> convert to miles
-                    distance_miles = round(route["distance"] * 0.000621371, 1)
+                    total_distance_miles = round(route["distance"] * 0.000621371, 1)
+                    total_duration_hours = round(route.get("duration", 0) / 3600.0, 2)
                     geojson_coords = route["geometry"]["coordinates"]
-                    # GeoJSON is [lng, lat] -> convert to Leaflet standard [lat, lng]
                     leaflet_coords = [[pt[1], pt[0]] for pt in geojson_coords]
 
+                    legs = route.get("legs", [])
+                    deadhead_dist = round(legs[0]["distance"] * 0.000621371, 1) if has_deadhead and len(legs) > 1 else 0.0
+                    loaded_dist = round(legs[-1]["distance"] * 0.000621371, 1) if has_deadhead and len(legs) > 1 else total_distance_miles
+
+                    # Parse detailed route instructions from OSRM steps
+                    route_instructions = []
+                    step_counter = 1
+
+                    for leg_idx, leg in enumerate(legs):
+                        leg_type = "Deadhead (Repositioning)" if (has_deadhead and leg_idx == 0) else "Loaded Freight Transit"
+                        leg_from = waypoints[leg_idx].get("name", f"Stop {leg_idx + 1}")
+                        leg_to = waypoints[leg_idx + 1].get("name", f"Stop {leg_idx + 2}")
+
+                        # Add Leg Header Instruction
+                        route_instructions.append({
+                            "step_number": step_counter,
+                            "is_milestone": True,
+                            "leg_type": leg_type,
+                            "instruction": f"Begin {leg_type}: {leg_from} -> {leg_to}",
+                            "road_name": f"{round(leg['distance'] * 0.000621371, 1)} miles total for this leg",
+                            "distance_miles": round(leg["distance"] * 0.000621371, 1),
+                            "duration_minutes": round(leg["duration"] / 60.0, 1),
+                            "maneuver_type": "depart",
+                            "modifier": ""
+                        })
+                        step_counter += 1
+
+                        steps = leg.get("steps", [])
+                        for step in steps:
+                            step_dist_mi = round(step["distance"] * 0.000621371, 1)
+                            if step_dist_mi < 0.2 and step.get("maneuver", {}).get("type") not in ("depart", "arrive"):
+                                continue
+
+                            road_name = step.get("name", "").strip() or "Highway Corridor"
+                            maneuver = step.get("maneuver", {})
+                            m_type = maneuver.get("type", "continue")
+                            m_mod = maneuver.get("modifier", "")
+
+                            # Construct clean human-readable turn instruction
+                            if m_type == "depart":
+                                instruction = f"Depart on {road_name}"
+                            elif m_type == "arrive":
+                                instruction = f"Arrive at destination on {road_name}"
+                            elif m_type == "merge":
+                                instruction = f"Merge {m_mod} onto {road_name}" if m_mod else f"Merge onto {road_name}"
+                            elif m_type in ("turn", "fork", "off ramp", "on ramp"):
+                                instruction = f"Take {m_mod} onto {road_name}" if m_mod else f"Turn onto {road_name}"
+                            elif m_type == "new name":
+                                instruction = f"Continue onto {road_name}"
+                            else:
+                                instruction = f"Follow {road_name}"
+
+                            route_instructions.append({
+                                "step_number": step_counter,
+                                "is_milestone": False,
+                                "leg_type": leg_type,
+                                "instruction": instruction,
+                                "road_name": road_name,
+                                "distance_miles": step_dist_mi,
+                                "duration_minutes": round(step["duration"] / 60.0, 1),
+                                "maneuver_type": m_type,
+                                "modifier": m_mod
+                            })
+                            step_counter += 1
+
                     return {
-                        "distance_miles": distance_miles,
-                        "duration_hours": round(route.get("duration", 0) / 3600.0, 2),
+                        "distance_miles": total_distance_miles,
+                        "deadhead_distance_miles": deadhead_dist,
+                        "loaded_distance_miles": loaded_dist,
+                        "duration_hours": total_duration_hours,
                         "coordinates": leaflet_coords,
                         "routing_engine": "OSRM Interstate Corridor",
+                        "route_instructions": route_instructions,
                         "truck_compliance": {
                             "vehicle_height_ft": truck_height_ft,
                             "vehicle_weight_lbs": truck_weight_lbs,
@@ -155,27 +230,57 @@ class RoutingService:
         except Exception:
             pass
 
-        # Fallback: Geodesic great-circle route with realistic highway winding factor
-        direct_dist = haversine_distance_miles(lat1, lon1=lng1, lat2=lat2, lon2=lng2)
-        winding_factor = 1.18  # Real road networks average ~18% longer than great-circle
-        road_distance = round(direct_dist * winding_factor, 1)
+        # Fallback: Geodesic route calculation across points
+        all_coords = []
+        total_road_dist = 0.0
+        route_instructions = []
+        step_counter = 1
+        deadhead_dist = 0.0
 
-        # Generate smooth intermediate coordinates for map rendering
-        steps = max(20, int(direct_dist / 30.0))
-        interpolated_coords = []
-        for i in range(steps + 1):
-            t = i / float(steps)
-            curr_lat = lat1 + (lat2 - lat1) * t
-            curr_lng = lng1 + (lng2 - lng1) * t
-            # Add slight realistic interstate curve
-            curve = math.sin(t * math.pi) * 0.3 * (1 if (lat1 + lng1) % 2 > 1 else -1)
-            interpolated_coords.append([round(curr_lat + curve, 5), round(curr_lng, 5)])
+        for i in range(len(waypoints) - 1):
+            w1 = waypoints[i]
+            w2 = waypoints[i + 1]
+            d = haversine_distance_miles(w1["lat"], w1["lng"], w2["lat"], w2["lng"]) * 1.18
+            d = round(d, 1)
+            total_road_dist += d
+
+            leg_type = "Deadhead (Repositioning)" if (has_deadhead and i == 0) else "Loaded Freight Transit"
+            if has_deadhead and i == 0:
+                deadhead_dist = d
+
+            route_instructions.append({
+                "step_number": step_counter,
+                "is_milestone": True,
+                "leg_type": leg_type,
+                "instruction": f"Depart {w1.get('name', 'Terminal')} toward {w2.get('name', 'Terminal')}",
+                "road_name": f"US Interstate Freight Corridor ({d} mi)",
+                "distance_miles": d,
+                "duration_minutes": round((d / 55.0) * 60, 1),
+                "maneuver_type": "depart",
+                "modifier": ""
+            })
+            step_counter += 1
+
+            # Interpolate segment coordinates
+            steps = max(15, int(d / 25.0))
+            for s in range(steps + 1):
+                t = s / float(steps)
+                lat = w1["lat"] + (w2["lat"] - w1["lat"]) * t
+                lng = w1["lng"] + (w2["lng"] - w1["lng"]) * t
+                curve = math.sin(t * math.pi) * 0.25 * (1 if (w1["lat"] + w1["lng"]) % 2 > 1 else -1)
+                all_coords.append([round(lat + curve, 5), round(lng, 5)])
+
+        total_road_dist = round(total_road_dist, 1)
+        loaded_dist = round(total_road_dist - deadhead_dist, 1)
 
         return {
-            "distance_miles": road_distance,
-            "duration_hours": round(road_distance / 55.0, 2),
-            "coordinates": interpolated_coords,
+            "distance_miles": total_road_dist,
+            "deadhead_distance_miles": deadhead_dist,
+            "loaded_distance_miles": loaded_dist,
+            "duration_hours": round(total_road_dist / 55.0, 2),
+            "coordinates": all_coords,
             "routing_engine": "Geodesic Highway Interpolation (Offline/Fallback)",
+            "route_instructions": route_instructions,
             "truck_compliance": {
                 "vehicle_height_ft": truck_height_ft,
                 "vehicle_weight_lbs": truck_weight_lbs,

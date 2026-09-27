@@ -79,8 +79,10 @@ class HosSimulator:
         current_cycle_used: float = 0.0,
         average_truck_speed: float = 55.0,
         start_time: Optional[datetime] = None,
-        pickup_location: str = "Origin Terminal",
+        current_location: str = "Origin Terminal",
+        pickup_location: str = "Shipper Terminal",
         dropoff_location: str = "Destination Terminal",
+        deadhead_distance_miles: float = 0.0,
         fuel_interval_miles: float = 1000.0,
         truck_height_ft: float = 13.5,
         truck_weight_lbs: float = 80000.0
@@ -88,19 +90,20 @@ class HosSimulator:
         self.total_trip_distance = float(max(1.0, total_trip_distance))
         self.current_cycle_used = float(max(0.0, current_cycle_used))
         self.average_truck_speed = float(max(20.0, average_truck_speed))
-        
-        # Start default at 06:00:00 on current or given date
-        if start_time is None:
-            now = datetime.now()
-            self.start_time = datetime(now.year, now.month, now.day, 6, 0, 0)
-        else:
-            self.start_time = start_time
-
+        self.deadhead_distance_miles = max(0.0, float(deadhead_distance_miles))
+        self.current_location = current_location
         self.pickup_location = pickup_location
         self.dropoff_location = dropoff_location
         self.fuel_interval_miles = fuel_interval_miles
         self.truck_height_ft = truck_height_ft
         self.truck_weight_lbs = truck_weight_lbs
+
+        # Start default at 08:00:00 on current date per FMCSA assessment instructions
+        if start_time is None:
+            now = datetime.now()
+            self.start_time = datetime(now.year, now.month, now.day, 8, 0, 0)
+        else:
+            self.start_time = start_time
 
         # Generated raw timeline events before midnight partitioning
         self.events: List[TimelineEvent] = []
@@ -116,7 +119,7 @@ class HosSimulator:
         clock = self.start_time
         day_start = datetime(clock.year, clock.month, clock.day, 0, 0, 0)
 
-        # 1. Prior to shift start on Day 1: Off Duty (Line 1) from 00:00 to shift start (06:00)
+        # 1. Prior to shift start on Day 1: Off Duty (Line 1) from 00:00 to shift start
         if clock > day_start:
             self.events.append(
                 TimelineEvent(
@@ -127,43 +130,123 @@ class HosSimulator:
                     end_mile=0.0,
                     activity="Pre-Shift Off Duty",
                     remarks="Off Duty Prior to Trip Shift",
-                    location=self.pickup_location
+                    location=self.current_location if self.deadhead_distance_miles > 0 else self.pickup_location
                 )
             )
 
-        # 2. Pickup Terminal: 1.0 hour On-Duty Not Driving (Line 4)
-        pickup_duration = 1.0  # 1 hour
-        pickup_end = clock + timedelta(hours=pickup_duration)
-        self.events.append(
-            TimelineEvent(
-                status=DutyStatus.ON_DUTY_ND,
-                start_datetime=clock,
-                end_datetime=pickup_end,
-                start_mile=0.0,
-                end_mile=0.0,
-                activity="Pickup & Loading",
-                remarks="Pre-Trip Inspection & Freight Loading",
-                location=self.pickup_location
-            )
-        )
-        self.waypoints.append({
-            "type": "pickup",
-            "name": f"Pickup Terminal - {self.pickup_location}",
-            "mile_marker": 0.0,
-            "timestamp": clock.isoformat(),
-            "duration_hours": pickup_duration,
-            "action": "Loading Cargo (Line 4)"
-        })
-
-        clock = pickup_end
-
-        # State trackers for FMCSA shift limits
-        shift_driving_hours = 0.0
-        shift_window_elapsed = pickup_duration  # 14-hour window clock includes initial 1h on-duty
-        continuous_driving_hours = 0.0
         miles_driven = 0.0
         miles_since_last_fuel = 0.0
-        running_cycle_hours = self.current_cycle_used + pickup_duration
+        shift_driving_hours = 0.0
+        shift_window_elapsed = 0.0
+        continuous_driving_hours = 0.0
+        running_cycle_hours = self.current_cycle_used
+
+        # Handle Deadhead Repositioning Leg (if current != pickup)
+        if self.deadhead_distance_miles > 0:
+            # 2a. Pre-trip inspection at Current Location (15 mins Line 4)
+            pretrip_dur = 0.25
+            pretrip_end = clock + timedelta(hours=pretrip_dur)
+            self.events.append(
+                TimelineEvent(
+                    status=DutyStatus.ON_DUTY_ND,
+                    start_datetime=clock,
+                    end_datetime=pretrip_end,
+                    start_mile=0.0,
+                    end_mile=0.0,
+                    activity="Pre-Trip Inspection",
+                    remarks="Pre-Trip DVIR at Origin Terminal",
+                    location=self.current_location
+                )
+            )
+            self.waypoints.append({
+                "type": "current",
+                "name": f"Origin Terminal - {self.current_location}",
+                "mile_marker": 0.0,
+                "timestamp": clock.isoformat(),
+                "duration_hours": pretrip_dur,
+                "action": "Pre-Trip Inspection & Dispatch (Line 4)"
+            })
+            clock = pretrip_end
+            shift_window_elapsed += pretrip_dur
+            running_cycle_hours += pretrip_dur
+
+            # 2b. Deadhead driving to Pickup Location
+            deadhead_drive_hours = self.deadhead_distance_miles / self.average_truck_speed
+            drive_end = clock + timedelta(hours=deadhead_drive_hours)
+            self.events.append(
+                TimelineEvent(
+                    status=DutyStatus.DRIVING,
+                    start_datetime=clock,
+                    end_datetime=drive_end,
+                    start_mile=0.0,
+                    end_mile=self.deadhead_distance_miles,
+                    activity="Deadhead Repositioning",
+                    remarks=f"Deadhead transit to shipper at {self.average_truck_speed:.0f} MPH",
+                    location=f"In Transit to {self.pickup_location}"
+                )
+            )
+            clock = drive_end
+            miles_driven = self.deadhead_distance_miles
+            miles_since_last_fuel = self.deadhead_distance_miles
+            shift_driving_hours += deadhead_drive_hours
+            shift_window_elapsed += deadhead_drive_hours
+            continuous_driving_hours += deadhead_drive_hours
+            running_cycle_hours += deadhead_drive_hours
+
+            # 2c. Pickup Terminal: 1.0 hour On-Duty Not Driving (Line 4) for Loading Cargo
+            pickup_duration = 1.0
+            pickup_end = clock + timedelta(hours=pickup_duration)
+            self.events.append(
+                TimelineEvent(
+                    status=DutyStatus.ON_DUTY_ND,
+                    start_datetime=clock,
+                    end_datetime=pickup_end,
+                    start_mile=miles_driven,
+                    end_mile=miles_driven,
+                    activity="Pickup & Loading",
+                    remarks="Cargo Loading & Securement",
+                    location=self.pickup_location
+                )
+            )
+            self.waypoints.append({
+                "type": "pickup",
+                "name": f"Pickup Terminal - {self.pickup_location}",
+                "mile_marker": round(miles_driven, 1),
+                "timestamp": clock.isoformat(),
+                "duration_hours": pickup_duration,
+                "action": "Cargo Loading (Line 4)"
+            })
+            clock = pickup_end
+            shift_window_elapsed += pickup_duration
+            running_cycle_hours += pickup_duration
+
+        else:
+            # Direct pickup at origin (no deadhead)
+            pickup_duration = 1.0
+            pickup_end = clock + timedelta(hours=pickup_duration)
+            self.events.append(
+                TimelineEvent(
+                    status=DutyStatus.ON_DUTY_ND,
+                    start_datetime=clock,
+                    end_datetime=pickup_end,
+                    start_mile=0.0,
+                    end_mile=0.0,
+                    activity="Pickup & Loading",
+                    remarks="Pre-Trip Inspection & Freight Loading",
+                    location=self.pickup_location
+                )
+            )
+            self.waypoints.append({
+                "type": "pickup",
+                "name": f"Pickup Terminal - {self.pickup_location}",
+                "mile_marker": 0.0,
+                "timestamp": clock.isoformat(),
+                "duration_hours": pickup_duration,
+                "action": "Loading Cargo (Line 4)"
+            })
+            clock = pickup_end
+            shift_window_elapsed = pickup_duration
+            running_cycle_hours += pickup_duration
 
         loop_guard = 0
         max_iterations = 1000  # Avoid any infinite loop
@@ -183,7 +266,7 @@ class HosSimulator:
                 rest_duration = 10.0
                 rest_end = clock + timedelta(hours=rest_duration)
                 rest_location = f"Rest Area / Truck Stop (Mile {miles_driven:.1f})"
-                
+
                 self.events.append(
                     TimelineEvent(
                         status=DutyStatus.SLEEPER_BERTH,
@@ -198,7 +281,7 @@ class HosSimulator:
                 )
                 self.waypoints.append({
                     "type": "sleeper_reset",
-                    "name": f"10-Hour Sleeper Berth (Mile {miles_driven:.1f})",
+                    "name": f"Mandatory HOS Sleeper Berth (Mile {miles_driven:.1f})",
                     "mile_marker": round(miles_driven, 1),
                     "timestamp": clock.isoformat(),
                     "duration_hours": rest_duration,
@@ -234,7 +317,7 @@ class HosSimulator:
                 )
                 self.waypoints.append({
                     "type": "rest_break",
-                    "name": f"30-Minute Rest Break (Mile {miles_driven:.1f})",
+                    "name": f"Mandatory HOS Rest Stop (Mile {miles_driven:.1f})",
                     "mile_marker": round(miles_driven, 1),
                     "timestamp": clock.isoformat(),
                     "duration_hours": break_duration,
@@ -269,7 +352,7 @@ class HosSimulator:
                 )
                 self.waypoints.append({
                     "type": "fuel_stop",
-                    "name": f"Fueling Station (Mile {miles_driven:.1f})",
+                    "name": f"1,000-Mile Fueling Station (Mile {miles_driven:.1f})",
                     "mile_marker": round(miles_driven, 1),
                     "timestamp": clock.isoformat(),
                     "duration_hours": fuel_duration,
