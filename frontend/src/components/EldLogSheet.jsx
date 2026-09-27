@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, CheckCircle, Clock, MapPin, AlertCircle, FileText, Info } from 'lucide-react';
 
-export default function EldLogSheet({ dayData, tripSummary, locations }) {
+export default function EldLogSheet({ dayData, tripSummary, locations, allDays = [] }) {
   if (!dayData) return null;
 
   const [hoveredSegment, setHoveredSegment] = useState(null);
